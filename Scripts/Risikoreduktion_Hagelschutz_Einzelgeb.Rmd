@@ -1,0 +1,368 @@
+---
+title: "Hagelschutz GVZ"
+subtitle: "Nutzen-Kosten der Risikoreduktion: Betrachtung für Einzelbgebäude"
+author: "Mirco Heidemann"
+date: "05/2019"
+always_allow_html: yes
+output:
+  pdf_document
+---
+**Dieses Arbeitspapier ist keine öffentliche Publikation. Es dokumentiert lediglich die Berechnungen und die zugrundeliegenden Annahmen. Bitte nur intern verwenden.**
+
+## Motivation einer Nutzen-Kosten Rechnung
+Sinnvoller Gebäudeschutz vor Naturgefahren ist wirtschaftlich und verhältnismässig. Um den monetären Nutzen der Präventionsmassnahme «Hagelschutz – einfach automatisch» aufzuzeigen, wurde eine Methodik zur Nutzen-Kosten Rechnung entwickelt. Die Methode wird bei der GVZ künftig auf weitere Naturgefahren übertragen um Präventionsmassnahmen messbar zu machen. Zudem können über das Nutzen-Kosten Verhältnis verschiedene Präventionsmassnahmen verglichen, und Ressourcen optimal geplant und eingesetzt werden.
+
+Zusammenfassend:
+
+- Den (monetären) Nutzen von Prävention aufzeigen
+- Sinnvoller Gebäudeschutz vor Naturgefahren ist wirtschaftlich und verhältnismässig
+- Benchmark: Vergleichbarkeit von Präventionsmassnahmen
+- Methode kann auf weitere Naturgefahren übertragen werden
+- Gebäudeschutz vor Naturgefahren soll messbar gemacht werden
+- Die Risikominderung (Nutzen) der Präventionsmassnahme wird ins Verhältnis der Kosten gesetzt
+
+```{r setup, message = FALSE, warning=FALSE, include=FALSE}
+# Define whether to hide code chunks globally (echo = FALSE) or show all (echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(kableExtra)
+library(ggpubr)
+
+## relative pfade
+data_pth = ("../Daten/")
+```
+
+## Import and wrangling der Gebäudedaten (Beratungsliste von Roger Welter)
+- Für das Jahr 2016 ist eine eigene Liste vorhanden, ab 2017 die allgemeine Pendenzenliste
+- Die Gemeindefusionen ab 2015 sind bereits in der Pendenzenliste angepasst:
+    - 229, 212: zu 298
+    - 171, 179: zu 297
+    - 174, 175: zu 296
+    - 217, 222: zu 294
+    - 132, 133: zu 295
+    - 134, 140, 142: zu 293
+    - 036, 042, 044: zu 292
+  
+- Doppelte Gebäudenummern in Zeilen wurden in der Beratungsliste (CSV) bereits entfernt
+- Filtern nach Gebäuden die mit dem Hagelschutzsystem ausgerüstet sind: Die Beratungsliste beinhaltet alle angefragten Gebäude. Manche Gebäude eignen sich nicht für den Hagelschutz, andere haben kein Interesse daran. Folgend werden nur noch Gebäude berücksichtigt, bei welchen das Hagelschutz System eingebaut wurde und eine Risikoreduktion erziehlt werden kann (GVZ_Kosten_Signalbox > 0 ODER GVZ_Kosten_Programmierung == "ja").
+- Falls die Anzahl Storen fehlt, wird der Median über alle ausgerüsteten Gebäude verwendet
+
+```{r message = FALSE}
+## Import der Liste mit den einzelnen Gebäuden
+input_csv <- paste0(data_pth, "Hagelschutz_Einzelgeb_Movo11.csv")
+
+geb_hs <- read_delim(input_csv, delim = ";",
+                          locale = locale(encoding = 'ISO-8859-1'),
+                          col_names = TRUE,
+                          col_types = cols_only(
+                            ausgeruestetes_Geb = col_character(),
+                            Anzahl_Storen = col_double(),
+                            Abschluss = col_date("%d.%m.%Y"),
+                            GVZ_Kosten_geschaetzt = col_double())) 
+
+# falls die Anzahl Storen fehlt, nimm den Mittewert über alle ausgerüsteten Gebäude
+geb_hs <- geb_hs %>% 
+  mutate(Anzahl_Storen = ifelse(is.na(Anzahl_Storen),
+                                round(median(Anzahl_Storen, na.rm = TRUE)), Anzahl_Storen))
+```
+
+## Annahmen und Berchnung des Schadenpotenzial und der Risikoreduktion
+
+**Durchschnittlicher Storenpreis:**
+Wir rechnen mit einem durchschnittlichen Storenpreis, inklusive Montage von aussen, von CHF 800.-.
+Zum Vergleich: In der Quick-Check Systematik wird ein Preis pro Store von CHF 600.- bis CHF 700.- angenommen (Montage von innen).
+
+**Betroffenheit der Storen am Gebäude und Schadengrad des Storens:**
+Ein Hagelzug folgt einer geographischen Zugbahn und von Hagelschlag ist nicht das gesamte Gebäude betroffen. Z.B. ist die West-Süd Fassade eines Gebäudes betroffen und auch an dieser, dem Hagel zugewandten Fassade, sind nicht immer gleich alle Storen beschädigt. Der **Betroffenheitsgrad** beschreibt den Anteil an beschädigten Storen eine Gebäudes. In welchem Ausmass der von Hagel betroffene Storen beschädigt wird, beschreibt der **Schadengrad**. Bei Hagekorngrössen von 1 cm und kleiner werden Betroffenheitsgrad und Schadengrad mit Null angenommen.
+
+**Potenzieller Schaden und Hagelrisiko**
+Analog zur Quick-Check Methode wird ein minimaler Schaden mit einem Betroffenheitsgrad von 1/4 und einem doppelt so hohen, maximaler Schaden mit einem Betroffenheitsgrad von 1/2 untersucht. Als bessere Risikoschätzung wird nach interner Diskussion der Betroffenheitsgrad von 1/4 angenommen. D.h. 1/4 aller Storen am Gebäude werden durch Hagelschlag beschädigt.
+
+Die Häufigkeit, respektive die Wahrscheinlichkeit, mit welcher die unterschiedlich intensiven Schadenereignisse eintreten, werden mit den Wiederkehrperioden (WKP) beschrieben. Die Hagelkorngrösse steht für die Intensität des Ereignisses.
+
+Korngrösse [cm] | WKP [Jahre] | Betroffenheitsgrad | Schadengrad
+--------------- | ------------| ------------------ | -----------
+1               | 1           | 0                  | 0
+2               | 5           | 1/4                | 1/4
+3               | 20          | 1/4                | 2/3
+4               | 100         | 1/4                | 1
+5               | 500         | 1/4                | 1
+> 5             | 1000        | 1/4                | 1
+
+
+**Den potenziellen Schaden am Gebäude rechnen wir wie folgt:**
+$$S_{Ti} = N_{Store} * Pr_{Store} * BG_{Ti} * SG_{i}$$
+wobei
+
+- Nstore = Anzahl Storen
+- PRstore = Preis pro Store
+- BG = Betroffenheitsgrad
+- SG = Schadengrad
+- Ti = Wiederkehrperiode
+
+Das **Hagelrisiko** rechnet sich aus dem potenziellen Schaden und der Wahrscheinlichkeit mit der dieser Schaden eintritt.
+
+Über Szenarien werden die Schäden mit der Häufigkeiten zum Risiko verknüpft: Ein Hagelzug mit einer Häufigkeit von 1 mal in 20 Jahren führt zu einem Schaden von CHF 50 Mio oder ein Hagelzug mit einer Häufigkeit von 1 mal in 100 Jahren führt zu einem Schaden von CHF 240 Mio.
+
+Analog zur Methodik der Nutzen-Kosten Abschätzung des Präventions Excels (von Claudio Hauser), wird der Risikobeitrag jeder Jährlichkeit zum gesamt Risiko addiert (jeder Balken wird zur Fläche unter der Jährlichkeits-Schaden Kurve summiert).
+Entscheidend in dieser Methodik sind die aufgeführten Wiederkehrperioden. Diese bestimmen die Balkengrösse welche zum gesamt Risiko addiert werden. Mit welchen Wiederkehrperioden für die Risikoschätzung gerechnet wird, ist nicht klar definiert und bis zu einem gewissen Grad willkürlich. Um dieser "Willkür" entgegen zu wirken, wird nicht nur ein Wert für das Risiko berechnet, sondern jeweils eine Bandbreite mit Minmal-, Maximal- und Mittelwert angegeben.
+
+Mit folgender Formel wird das Risiko berechnet:
+$$R_n=[\frac{S_{Ti}+S_{Ti+1}}{2}*(\frac{1}{T_i}-\frac{1}{T_{i+1}})]+[\frac{S_{Ti+1}+S_{Ti+2}}{2}*(\frac{1}{T_{i+1}}-\frac{1}{T_{i+2}})]+...+[\frac{S_{Tn}+S_{Tn-1}}{2}*(\frac{1}{T_{n-1}}-\frac{1}{T_n})]$$
+
+- Ti bezeichnet die Wiederkehrperiode, z.B. {1, 2, 5, .., 500, 1'000}
+- Tn ist die grösste, angenommene Wiederkehrperiode, z.B. 1'000
+- Rn steht für das Risiko über den Beobachtungszeitraum von Tn und entspricht der jährlichen Schadenerwartung
+
+```{r}
+# Variablen Definition
+pr_store <- 800
+
+bg <- 1/4
+
+sg_1 <- 0
+sg_5 <- 1/4
+sg_20 <- 2/3
+sg_100 <- 1
+sg_500 <- 1
+
+# Wiederkehrperioden in Jahre definieren: Diese sind bestimmend für das Integral, d.h. das Risiko
+wkp <- c(1, 2, 5, 10, 20, 30, 50, 75, 100, 200, 300, 500, 1e3)
+# Wahrscheinlichkeiten "zwischen"" den WKP: 1/1 - 1/2, 1/2 - 1/5, usw.
+p <- diff(1/wkp) * -1
+
+geb_hs <- geb_hs %>% 
+  # schaden pro Gebäude
+  mutate(schad_1 = 0,
+         schad_2 = 0,
+         schad_5 = Anzahl_Storen * pr_store * bg * sg_5,
+         schad_10 = schad_5,
+         schad_20 = Anzahl_Storen * pr_store * bg * sg_20,
+         schad_30 = schad_20,
+         schad_50 = schad_20,
+         schad_75 = schad_20,
+         schad_100 = Anzahl_Storen * pr_store * bg * sg_100,
+         schad_200 = schad_100,
+         schad_300 = schad_100,
+         schad_500 = Anzahl_Storen * pr_store * bg * sg_500,
+         schad_1000 = schad_500,
+         # Schaden und jährliche Schadenerwartung zwischen den jährlichkeiten
+         # pro Gebäude: min, max, mittel
+         s_mtl1 = (schad_1 + schad_2)/2,
+         s_min1 = schad_1,
+         s_max1 = schad_2,
+         jse_mtl1 = s_mtl1 * p[1],
+         jse_min1 = s_min1 * p[1],
+         jse_max1 = s_max1 * p[1],
+         s_mtl2 = (schad_2 + schad_5)/2,
+         s_min2 = schad_2,
+         s_max2 = schad_5,
+         jse_mtl2 = s_mtl2 * p[2],
+         jse_min2 = s_min2 * p[2],
+         jse_max2 = s_max2 * p[2],
+         s_mtl3 = (schad_5 + schad_10)/2,
+         s_min3 = schad_5,
+         s_max3 = schad_10,
+         jse_mtl3 = s_mtl3 * p[3],
+         jse_min3 = s_min3 * p[3],
+         jse_max3 = s_max3 * p[3],
+         s_mtl4 = (schad_10 + schad_20)/2,
+         s_min4 = schad_10,
+         s_max4 = schad_20,
+         jse_mtl4 = s_mtl4 * p[4],
+         jse_min4 = s_min4 * p[4],
+         jse_max4 = s_max4 * p[4],
+         s_mtl5 = (schad_20 + schad_30)/2,
+         s_min5 = schad_20,
+         s_max5 = schad_30,
+         jse_mtl5 = s_mtl5 * p[5],
+         jse_min5 = s_min5 * p[5],
+         jse_max5 = s_max5 * p[5],
+         s_mtl6 = (schad_30 + schad_50)/2,
+         s_min6 = schad_30,
+         s_max6 = schad_50,
+         jse_mtl6 = s_mtl6 * p[6],
+         jse_min6 = s_min6 * p[6],
+         jse_max6 = s_max6 * p[6],
+         s_mtl7 = (schad_50 + schad_75)/2,
+         s_min7 = schad_50,
+         s_max7 = schad_75,
+         jse_mtl7 = s_mtl7 * p[7],
+         jse_min7 = s_min7 * p[7],
+         jse_max7 = s_max7 * p[7],
+         s_mtl8 = (schad_75 + schad_100)/2,
+         s_min8 = schad_75,
+         s_max8 = schad_100,
+         jse_mtl8 = s_mtl8 * p[8],
+         jse_min8 = s_min8 * p[8],
+         jse_max8 = s_max8 * p[8],
+         s_mtl9 = (schad_100 + schad_200)/2,
+         s_min9 = schad_100,
+         s_max9 = schad_200,
+         jse_mtl9 = s_mtl9 * p[9],
+         jse_min9 = s_min9 * p[9],
+         jse_max9 = s_max9 * p[9],
+         s_mtl10 = (schad_200 + schad_300)/2,
+         s_min10 = schad_200,
+         s_max10 = schad_300,
+         jse_mtl10 = s_mtl10 * p[10],
+         jse_min10 = s_min10 * p[10],
+         jse_max10 = s_max10 * p[10],
+         s_mtl11 = (schad_300 + schad_500)/2,
+         s_min11 = schad_300,
+         s_max11 = schad_500,
+         jse_mtl11 = s_mtl11 * p[11],
+         jse_min11 = s_min11 * p[11],
+         jse_max11 = s_max11 * p[11],
+         s_mtl12 = (schad_500 + schad_1000)/2,
+         s_min12 = schad_500,
+         s_max12 = schad_1000,
+         jse_mtl12 = s_mtl12 * p[12],
+         jse_min12 = s_min12 * p[12],
+         jse_max12 = s_max12 * p[12],
+         # Risiko pro Gebäude: Mittel, Min, Max
+         jse_mtl = jse_mtl1 + jse_mtl2 + jse_mtl3 + jse_mtl4 + jse_mtl5 + jse_mtl6 + 
+           jse_mtl7 + jse_mtl8 + jse_mtl9 + jse_mtl10 + jse_mtl11 + jse_mtl12,
+         jse_min = jse_min1 + jse_min2 + jse_min3 + jse_min4 + jse_min5 + jse_min6 + 
+           jse_min7 + jse_min8 + jse_min9 + jse_min10 + jse_min11 + jse_min12,
+         jse_max = jse_max1 + jse_max2 + jse_max3 + jse_max4 + jse_max5 + jse_max6 + 
+           jse_max7 + jse_max8 + jse_max9 + jse_max10 + jse_max11 + jse_max12)
+```
+
+#### Zusammenfassung des Risiko - Risiko nach gemittelter Berechnung
+```{r message = FALSE}
+tbl_ri <- geb_hs %>% 
+  group_by(format(Abschluss, "%Y")) %>% 
+  summarise(n = n(),
+            min = min(jse_mtl),
+            mean = mean(jse_mtl),
+            median = median(jse_mtl),
+            max = max(jse_mtl),
+            total = sum(jse_mtl))
+
+knitr::kable(tbl_ri,
+             col.names = c('Abschlussjahr', 'Anzahl', 'Min. Risiko', 'Mittel Risiko',
+                           'Median Risiko', 'Max. Risiko', 'Total Risiko'),
+             align = c('l', 'c', 'c', 'c', 'c', 'c', 'c'),
+             digits = c(0, 0, 0, 0, 0, 0, 0),
+             format.args = list(big.mark = "'"),
+             caption = 'Risikoreduktion: Risiko als jährlicher Schadenerwartungswert in CHF/a') %>%
+  kable_styling(bootstrap_options = "striped", full_width = F,
+                latex_options = "HOLD_position")
+```
+
+#### Risikoreduktion nach Berücksichtigung der Trefferquote als Funktionsgrad
+SRF Meteo gibt für das Hagel-Warnsystem eine Trefferquote von 95% an (Stand Dezember 2018).
+```{r}
+trefferquote_srf <- 0.95
+
+geb_hs <- geb_hs %>% 
+  mutate(jse_mtl_fktgrad = jse_mtl * trefferquote_srf,
+         jse_min_fktgrad = jse_min * trefferquote_srf,
+         jse_max_fktgrad = jse_max * trefferquote_srf)
+
+tbl_ri <- geb_hs %>% 
+  group_by(format(Abschluss, "%Y")) %>% 
+  summarise(n = n(),
+            min = min(jse_mtl_fktgrad),
+            mean = mean(jse_mtl_fktgrad),
+            median = median(jse_mtl_fktgrad),
+            max = max(jse_mtl_fktgrad),
+            total = sum(jse_mtl_fktgrad))
+
+knitr::kable(tbl_ri,
+             col.names = c('Abschlussjahr', 'Anzahl', 'Min. Risiko', 'Mittel Risiko',
+                           'Median Risiko', 'Max. Risiko', 'Total Risiko'),
+             align = c('l', 'c', 'c', 'c', 'c', 'c', 'c'),
+             digits = c(0, 0, 0, 0, 0, 0, 0),
+             format.args = list(big.mark = "'"),
+             caption = paste('Risikoreduktion durch Hagelschutz in CHF/a 
+                             mit der SRF Meteo Trefferquote von 0.95')) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F,
+                latex_options = "HOLD_position")
+```
+
+\newpage
+
+## Nutzen - Kosten Schätzung
+Annahmen für die Kosten der Massnahme Hagelschutz:
+
+- 70'000 CHF jährlicher GVZ Beitragskostenanteil für den Unterhalt des Hagelwarnsystems. Diese Unterhaltskosten werden auf die jährlich ausgerüsteten Gebäude verteilt.
+--> Für die Nutzen - Kosten Rechnung von einzel Gebäuden wir der Mittelwert der jährlich ausgerüsteten Gebäude angenommen.
+
+- Als Kosten für die Installation und Montage des Hagelschutzsystems wird der "geschätzte GVZ Betrag" verwendet, d.h. der Betrag, welcher bei der Zusage für den Hagelschutz angenommen wird (im Mittel rund CHF 3'000.-).
+- Die Erfahrung ergibt einen mittleren Arbeitsaufwand von 10 h pro Gebäude.
+- Analog der Strategie NG wird mit einem Stundenansatz von CHF 150 gerechnet.
+- Als jährliche Schadenerwartung (= Risiko) wird der Mittelwert nach der Risikoberechnung verwendet.
+- Konstante Verzinsung von 2 %. Der nominale Zinssatz richtet sich z.B. nach dem Hypothekarzins.
+- Eine mittlere Lebensdauer der Fassade von 25 Jahren.
+
+Die Wirtschaftlichkeit wird auf einer jährlichen Basis beurteilt, weshalb die Kosten für eine Schutzmassnahme ebenfalls auf jährliche Werte umgelegt werden. Als Grundlage für die Berechnung der jährlichen Kosten aus der Anfangsinvestition dient die **Annuität**. Als Annuität wird eine regelmässige, jährliche Zahlung bezeichnet, die sich aus den Anteilen Zins und der Tilgung zusammensetzt. Die Tilgung beschreibt hier den jährlichen Beitrag an die Gesamtkosten der Schutzmassnahme.
+
+Durchschnittliche Kosten für die Ausrüstung **eines** Gebäudes mit dem Hagelschutzsystem:
+$$Kosten_{Hagelschutz}=\frac{Unterhaltskosten}{n_{Geb /Jahr}}+Kosten_{Installation}+mittel(Arbeitsaufwand_{Geb})*Stundensatz$$
+Das Nutzen-Kosten Verhältnis ergibt sich aus dem Quotient von Risiko, respektive der jährlichen Schadenerwartung, und der Annuität. Wir rechnen mit konstanten Rückzahlungsbeträgen (Raten) für
+die Annuität. Dabei bleibt die Höhe der Rate über die gesamte Laufzeit gleich, sofern die Annahme des konstanten, zum Zeitpunkt t=0 fixierten, Zinssatzes gilt:
+$$Annuitaet=Kosten_{Hagelschutz}*\frac{(1+Zinssatz)^{Lebensdauer}*Zinssatz}{(1+Zinssatz)^{Lebensdauer}-1} $$
+Das Nutzen-Kosten Verhältnis lässt sich nun wie folgt berechnen:
+$$N-K=\frac{Ri}{Annuitaet}$$
+
+```{r}
+kosten_system <- 70e3
+stundensatz <- 150
+arbeitsaufwand <- 10
+
+zinssatz <- 0.02
+lebensdauer <- 25
+
+geb_hs <- geb_hs %>%
+  # Anzahl total ausgerüsteter Gebäude pro Jahr
+  mutate(
+    # Nutzen-Kosten mit Verzinsung pro Gebäude
+    kosten_hs = kosten_system/90 + GVZ_Kosten_geschaetzt +
+      arbeitsaufwand * stundensatz,
+    annuitaet = kosten_hs*(((1+zinssatz)^lebensdauer*zinssatz)/
+                             ((1+zinssatz)^lebensdauer-1)),
+    nutzen_kosten = jse_mtl_fktgrad/annuitaet
+  )
+```
+
+Bei einer Nutzen-Kostenrechnung ohne Verzinsung rechnen wir mit einer linearen jährlichen Abschreibung von:
+$$Abschreibung=\frac{Kosten_{Hagelschutz}}{Lebensdauer}$$
+
+Daraus ergibt sich ein Nutzen-Kosten Verhältnis von
+$$N-K=\frac{Ri}{Abschreibung}$$
+oder direkt:
+$$N-K=\frac{Ri*Lebensdauer}{Kosten_{Hagelschutz}}$$
+```{r}
+# Nutzen-Kosten ohne Verzinsung pro Gebäude
+geb_hs <- geb_hs %>%
+  mutate(nutzen_kosten_ohne_zins = jse_mtl_fktgrad * lebensdauer / kosten_hs)
+```
+
+#### Zusammenfassung der Nutzen-Kosten Rechnung
+```{r}
+tbl_nk <- geb_hs %>% 
+  summarise(min = min(nutzen_kosten),
+            mean = mean(nutzen_kosten),
+            median = median(nutzen_kosten),
+            max = max(nutzen_kosten),
+            # ohne verzinsung
+            min_oz = min(nutzen_kosten_ohne_zins),
+            mean_oz = mean(nutzen_kosten_ohne_zins),
+            median_oz = median(nutzen_kosten_ohne_zins),
+            max_oz = max(nutzen_kosten_ohne_zins))
+
+tbl_nk <- data.frame(rbind(as.matrix(tbl_nk[1:4]), as.matrix(tbl_nk[5:8])),
+                     row.names = c("Mit Verzinsung", "Ohne Verzinsung"))
+
+knitr::kable(tbl_nk,
+             col.names = c('Min. Verhältnis', 'Mittel Verhältnis', 'Median Verhältnis',
+                           'Max. Verhältnis'),
+             align = c('c', 'c', 'c', 'c'), digits = c(0, 0, 0, 0),
+             format.args = list(big.mark = "'"),
+             caption = paste('Nutzen-Kosten Verhältnis: Verteilung über alle
+                             ausgerüsteten Gebäude')) %>%
+  kable_styling(bootstrap_options = "striped", latex_options = "HOLD_position", full_width = F)
+```

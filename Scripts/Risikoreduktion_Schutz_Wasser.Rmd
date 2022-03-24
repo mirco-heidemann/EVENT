@@ -1,0 +1,542 @@
+---
+title: "Gebäudeschutz vor Naturgefahren - Objektschutz vor Überschwemmungen bei der GVZ"
+subtitle: "Nutzen-Kosten Analyse der Risikoreduktion"
+author: "Mirco Heidemann"
+date: "08/2019"
+output:
+  pdf_document
+---
+**Dieses Arbeitspapier ist keine öffentliche Publikation. Es dokumentiert lediglich die Berechnungen und die zugrundeliegenden Annahmen. Bitte nur intern verwenden.**
+
+## Motivation einer Nutzen-Kosten Rechnung
+Sinnvoller Gebäudeschutz vor Naturgefahren ist wirtschaftlich und verhältnismässig. Um den monetären Nutzen der Überschwemmungsberatugnen der GVZ aufzuzeigen, wurde eine Methodik zur Nutzen-Kosten Rechnung entwickelt. Die Methode hilft der GVZ Präventionsmassnahmen messbar zu machen und  Nutzen-Kosten Verhältnis verschiedene Präventionsmassnahmen zu vergleichen. Damit können Ressourcen optimal geplant und eingesetzt werden.
+
+Zusammenfassend:
+
+- Den (monetären) Nutzen von Prävention aufzeigen
+- Sinnvoller Gebäudeschutz vor Naturgefahren ist wirtschaftlich und verhältnismässig
+- Benchmark: Vergleichbarkeit von Präventionsmassnahmen
+- Gebäudeschutz vor Naturgefahren soll messbar gemacht werden
+- Die Risikominderung (Nutzen) der Präventionsmassnahme wird ins Verhältnis der Kosten gesetzt
+
+```{r setup, message = FALSE, warning=FALSE, include=FALSE}
+# Define whether to hide code chunks globally (echo = FALSE) or show all (echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(kableExtra)
+library(ggpubr)
+
+## relative pfade
+data_pth = '../Daten/'
+```
+
+## Import and wrangling der Gebäudedaten (Beratungsliste, Stand: 18. Juli 2019)
+- Liste wurde im GIS mit den GK HW verschnitten um die fehlenden Einträge zur Gefaehrdung_HW abzufangen. Sind die Einträge in Gefaehrdung_HW in der Liste leer, so wird der Eintrag aus dem Verschnitt mit der GK HW verwendet. Ist dieser ebenfalls leer, so liegt keine Hochwassergefährdung vor.
+- Die Liste wurde mit dem 1ha Raster zur Versicherungssumme verschnitten für die Unterscheidung nach urban oder ländlich. Als urban geltern 1ha Rastersummen ab 40 Mio.
+
+Zu klärende Fragen:
+
+- Unterscheidung nach permanenter und mobiler Massnahme? Wie?
+- Überschwemmungsberatungen und Beitragsgesuche ohne Gefähdung:
+  - Verschnitt mit den GK HW?
+  - OA?
+  - Leer lassen, d.h. keine Gefährdung, kein Schaden, keine Risikoreduktion?
+- Infos Wassergefährdung nach synoptischer GK und OA. Bei HW mit niedriger Intensität rechnen?
+
+```{r message = FALSE}
+## Import der 2016'er Liste (bleibt unverändert)
+input_csv <- paste0(data_pth, "20190718_Praevention_GVZ_Attributs.csv")
+
+dat <- read_delim(input_csv, delim = ";",
+                  locale = locale(encoding = 'ISO-8859-1'),
+                  col_names = TRUE,
+                  col_types = cols_only(
+                    Typ = col_character(),
+                    Dossier_Nummer = col_character(),
+                    Versicherungssumme = col_double(),
+                    Investitionssumme = col_double(),
+                    Bauvorhaben = col_character(),
+                    Gefaehrdung_HW = col_character(),
+                    Schutzziel = col_character(),
+                    Massnahmenempfehlung = col_character(),
+                    Bemerkung = col_character(),
+                    ch.x = col_character(),
+                    ch.y = col_character(),
+                    Auszahlungsbetrag = col_double(),
+                    GEFSTUFE_HW = col_character(),
+                    SUMversSum = col_double(),
+                    TIEFE_30 = col_integer(),
+                    TIEFE_100 = col_integer(),
+                    TIEFE_300 = col_integer()))
+```
+
+```{r}
+dat <- dat %>% 
+  mutate(Urban = ifelse(SUMversSum >= 40e6, 1, 0),
+         Urban = ifelse(is.na(Urban), 0, Urban)) %>% 
+  filter(Typ == "ueberschwemmung" | Typ == "beitragsgesuch") %>% 
+  select(-c(GEFSTUFE_HW, SUMversSum))
+```
+
+## Annahmen und Berchnung des Schadenpotenzial und der Risikoreduktion Überschwemmung
+
+**Verleztlichkeiten**
+
+Charakteristik | Intensität   | GIS Attribut | Schadengrad: Anteil an der Versicherungssumme
+-------------- | ------------ | ------------ | ----------------------------------------------
+Ländlich       | schwach      | 1            | 0.04
+Ländlich       | mittel/stark | 2            | 0.2
+Urban          | schwach      | 1            | 0.1
+Urban          | mittel/stark | 2            | 0.3
+
+Oberflächenabfluss urban und ländlich:0.02
+
+Charakteristik | Fliesstiefe | GIS Attribut | Schadengrad: Anteil an der Versicherungssumme
+-------------- | ----------- | ------------ | ----------------------------------------------
+Ländlich       | 0 - 1 m     | 1 bis 4      | 0.04
+Ländlich       | 1 - 2 m     | 5 bis 6      | 0.08
+Ländlich       | > 2 m       | 7            | 0.2
+Urban          | 0 - 1 m     | 1 bis 4      | 0.1
+Urban          | 1 - 2 m     | 5 bis 6      | 0.2
+Urban          | > 2 m       | 7            | 0.3
+
+GIS Attribut 8: Überschwemmung ausserhalb Untersuchungsperimeter
+
+Intensität, respektive Fliesstiefe für EHQ: Intensitäten/Fliesstiefe von HQ300 wo vorhanden, sonst schwache Intensität, respektive Fliesstiefe von bis zu 1 m.
+
+Oberflächenabfluss urban und ländlich:0.02
+
+Bei Beratungen ohne Angabe zur HW Gefährdung und keine Wassertiefe nach Verschnitt mit den Karten, gilt die Annahme, dass es sich um Oberflächenabfluss (OA) handelt. Für den Oberflächenabfluss gilt eine Verletzlichkeit von 0.02 für urbane und ländliche Gebiete. Die Eintrittswahrscheinlichkeit bei OA wird mit 10 Jahren angenommen.
+
+```{r}
+dat <- dat %>% 
+  mutate(
+    # Wassertiefe von 8: Überschwemmung ausserhalb Untersuchungsperimeter
+    TIEFE_30 = ifelse(TIEFE_30 == 8, 0, TIEFE_30),
+    TIEFE_100 = ifelse(TIEFE_100 == 8, 0, TIEFE_100),
+    TIEFE_300 = ifelse(TIEFE_300 == 8, 0, TIEFE_300),
+    
+    schad_grad_30 = case_when(
+      Urban == 1 & TIEFE_30 > 0 & TIEFE_30 < 5 ~ 0.1,
+      Urban == 1 & TIEFE_30 > 4 & TIEFE_30 < 7 ~ 0.2,
+      Urban == 1 & TIEFE_30 == 7 ~ 0.3,
+      Urban == 0 & TIEFE_30 > 0 & TIEFE_30 < 5 ~ 0.04,
+      Urban == 0 & TIEFE_30 > 4 & TIEFE_30 < 7 ~ 0.08,
+      Urban == 0 & TIEFE_30 == 7 ~ 0.2),
+    
+    schad_grad_100 = case_when(
+      Urban == 1 & TIEFE_100 > 0 & TIEFE_100 < 5 ~ 0.1,
+      Urban == 1 & TIEFE_100 > 4 & TIEFE_100 < 7 ~ 0.2,
+      Urban == 1 & TIEFE_100 == 7 ~ 0.3,
+      Urban == 0 & TIEFE_100 > 0 & TIEFE_100 < 5 ~ 0.04,
+      Urban == 0 & TIEFE_100 > 4 & TIEFE_100 < 7 ~ 0.08,
+      Urban == 0 & TIEFE_100 == 7 ~ 0.2),
+    
+    schad_grad_300 = case_when(
+      Urban == 1 & TIEFE_300 > 0 & TIEFE_300 < 5 ~ 0.1,
+      Urban == 1 & TIEFE_300 > 4 & TIEFE_300 < 7 ~ 0.2,
+      Urban == 1 & TIEFE_300 == 7 ~ 0.3,
+      Urban == 0 & TIEFE_300 > 0 & TIEFE_300 < 5 ~ 0.04,
+      Urban == 0 & TIEFE_300 > 4 & TIEFE_300 < 7 ~ 0.08,
+      Urban == 0 & TIEFE_300 == 7 ~ 0.2),
+    
+    schad_grad_500 = ifelse(Gefaehrdung_HW ==  "EHQ"| Gefaehrdung_HW == "gelb-weiss",
+                            ifelse(!is.na(schad_grad_300),
+                                   schad_grad_300,
+                                   ifelse(Urban == 1, 0.1, 0.04)),
+                            0),
+    
+    schad_grad_OA = ifelse(Gefaehrdung_HW ==  "OA"| Gefaehrdung_HW == "oA" | is.na(Gefaehrdung_HW),
+                           0.02, 0),
+    # Vertraue auf den Eintrag der Hochwassergefährdung: Wenn keine Gefährdung angegeben, dann OA und die restlichen  Schadengrade sind Null
+    schad_grad_30 = ifelse(schad_grad_OA == 0, schad_grad_30, 0),
+    schad_grad_100 = ifelse(schad_grad_OA == 0, schad_grad_100, 0),
+    schad_grad_300 = ifelse(schad_grad_OA == 0, schad_grad_300, 0),
+    schad_grad_500 = ifelse(schad_grad_OA == 0, schad_grad_500, 0),
+    
+    # NA zu 0
+    schad_grad_30 = ifelse(is.na(schad_grad_30), 0, schad_grad_30),
+    schad_grad_100 = ifelse(is.na(schad_grad_100), 0, schad_grad_100),
+    schad_grad_300 = ifelse(is.na(schad_grad_300), 0, schad_grad_300),
+    schad_grad_500 = ifelse(is.na(schad_grad_500), 0, schad_grad_500)
+  )
+```
+
+**Schutzziele**
+Wenn in der Tabelle nichts vermerkt ist, dann wird für OA das Schutzziel HQ100 und für Hochwasser das HQ300 angenommen.
+
+```{r}
+dat <- dat %>% 
+  mutate(tmp_schutzziel = ifelse(!is.na(Schutzziel),
+                                 Schutzziel,
+                                 ifelse(schad_grad_OA == 0,
+                                        "HQ300",
+                                        "HQ100")),
+         geb_schutzziel = case_when(tmp_schutzziel == "HQ30" ~ 30,
+                                    str_detect(tmp_schutzziel, "100") ~ 100,
+                                    str_detect(tmp_schutzziel, "300") ~ 300,
+                                    str_detect(tmp_schutzziel, "EHQ") ~ 500,
+                                    str_detect(tmp_schutzziel, "OA") ~ 100,
+                                    str_detect(tmp_schutzziel, "keine") ~ 0,
+                                    str_detect(tmp_schutzziel, "-") ~ 0,
+                                    tmp_schutzziel == "0" ~ 0,
+                                    tmp_schutzziel == "HQ20" ~ 300,
+                                    tmp_schutzziel == "HQ00" ~ 300),
+         geb_schutzziel = ifelse(is.na(geb_schutzziel), 300, geb_schutzziel),
+         geb_schutzziel = as.integer(geb_schutzziel)) %>% 
+  select(-tmp_schutzziel)
+```
+
+**Versicherungssumme und Investitionssumme**
+
+```{r}
+# Bei Neubauten wird die Investitionssumme statt einer Versicherungssumme verwendet
+dat <- dat %>% 
+  mutate(versicherungswert = ifelse(Versicherungssumme == 0, Investitionssumme, Versicherungssumme)) %>% 
+  # wenn beides Null, dann raus
+  filter(versicherungswert > 0)
+```
+
+**Den potenziellen Schaden am Gebäude rechnen wir wie folgt:**
+$$S_{Ti} = VerSum_{Geb} * schadGrad_{Ti}$$
+wobei
+
+- VerSum = Versicherungswert des Gebäudes (Versicherungssumme oder Investitionssumme)
+- schadGrad = Schadengrad
+- Ti = Wiederkehrperiode
+
+```{r}
+# Keinen Schaden bis Jährlichkeit 5
+schad_1 <- schad_2 <- schad_5 <- schad_1_nM <- schad_2_nM <- schad_5_nM <- 0
+
+dat <- dat %>% 
+  # Annahme: Schäden durch OA beginnen bei einer Jährlichkeit von 10
+  mutate(schad_10 = versicherungswert * schad_grad_OA,
+         schad_20 = schad_10,
+         schad_30 = ifelse(schad_grad_30 == 0, schad_20, versicherungswert * schad_grad_30),
+         schad_50 = schad_30,
+         schad_75 = schad_30,
+         schad_100 = ifelse(schad_grad_100 == 0, schad_75, versicherungswert * schad_grad_100),
+         schad_200 = schad_100,
+         schad_300 = ifelse(schad_grad_300 == 0, schad_200, versicherungswert * schad_grad_300),
+         schad_500 = ifelse(schad_grad_500 == 0, schad_300, versicherungswert * schad_grad_500),
+         schad_1000 = schad_500,
+         # Schaden nach Massnahme (nM) mit einem Umsetzungsgrad von 100%
+         schad_10_nM = ifelse(geb_schutzziel >= 10, 0, schad_10),
+         schad_20_nM = ifelse(geb_schutzziel >= 20, 0, schad_20),
+         schad_30_nM = ifelse(geb_schutzziel >= 30, 0, schad_30),
+         schad_50_nM = ifelse(geb_schutzziel >= 50, 0, schad_50),
+         schad_75_nM = ifelse(geb_schutzziel >= 75, 0, schad_75),
+         schad_100_nM = ifelse(geb_schutzziel >= 100, 0, schad_100),
+         schad_200_nM = ifelse(geb_schutzziel >= 200, 0, schad_200),
+         schad_300_nM = ifelse(geb_schutzziel >= 300, 0, schad_300),
+         schad_500_nM = ifelse(geb_schutzziel >= 500, 0, schad_500),
+         schad_1000_nM = schad_500_nM)
+         # schad_1000_nM = ifelse(geb_schutzziel >= 1000, 0, schad_1000))
+```
+
+Das **Schadenrisiko** rechnet sich aus dem potenziellen Schaden und der Wahrscheinlichkeit mit der dieser Schaden eintritt.
+
+Über Szenarien werden die Schäden mit der Häufigkeiten zum Risiko verknüpft: Eine Überschwemmung mit einer Häufigkeit von 1 mal in 30 Jahren führt zu einem Gbeäudeschaden von CHF 500'000.
+
+Analog zur Methodik der Nutzen-Kosten Abschätzung des Präventions Excels (von Claudio Hauser), wird der Risikobeitrag jeder Jährlichkeit zum gesamt Risiko addiert (jeder Balken wird zur Fläche unter der Jährlichkeits-Schaden Kurve summiert).
+Entscheidend in dieser Methodik sind die aufgeführten Wiederkehrperioden. Diese bestimmen die Balkengrösse welche zum gesamt Risiko addiert werden. Mit welchen Wiederkehrperioden für die Risikoschätzung gerechnet wird, ist nicht klar definiert und bis zu einem gewissen Grad willkürlich. Um dieser "Willkür" entgegen zu wirken, wird nicht nur ein Wert für das Risiko berechnet, sondern jeweils eine Bandbreite mit Minmal-, Maximal- und Mittelwert angegeben.
+
+Mit folgender Formel wird das Risiko berechnet:
+$$R_n=[\frac{S_{Ti}+S_{Ti+1}}{2}*(\frac{1}{T_i}-\frac{1}{T_{i+1}})]+[\frac{S_{Ti+1}+S_{Ti+2}}{2}*(\frac{1}{T_{i+1}}-\frac{1}{T_{i+2}})]+...+[\frac{S_{Tn}+S_{Tn-1}}{2}*(\frac{1}{T_{n-1}}-\frac{1}{T_n})]$$
+
+- Ti bezeichnet die Wiederkehrperiode, z.B. {1, 2, 5, .., 500, 1'000}
+- Tn ist die grösste, angenommene Wiederkehrperiode, z.B. 1'000
+- Rn steht für das Risiko über den Beobachtungszeitraum von Tn und entspricht der jährlichen Schadenerwartung
+
+```{r}
+# Wiederkehrperioden in Jahre definieren: Diese sind bestimmend für das Integral, d.h. das Risiko
+wkp <- c(1, 2, 5, 10, 20, 30, 50, 75, 100, 200, 300, 500, 1e3)
+# Wahrscheinlichkeiten "zwischen"" den WKP: 1/1 - 1/2, 1/2 - 1/5, usw.
+p <- diff(1/wkp) * -1
+
+dat <- dat %>% 
+  mutate(
+    # Risiko vor Massnahme
+    s_mtl1 = (schad_1 + schad_2)/2,
+    jse_mtl1 = s_mtl1 * p[1],
+    s_mtl2 = (schad_2 + schad_5)/2,
+    jse_mtl2 = s_mtl2 * p[2],
+    s_mtl3 = (schad_5 + schad_10)/2,
+    jse_mtl3 = s_mtl3 * p[3],
+    s_mtl4 = (schad_10 + schad_20)/2,
+    jse_mtl4 = s_mtl4 * p[4],
+    s_mtl5 = (schad_20 + schad_30)/2,
+    jse_mtl5 = s_mtl5 * p[5],
+    s_mtl6 = (schad_30 + schad_50)/2,
+    jse_mtl6 = s_mtl6 * p[6],
+    s_mtl7 = (schad_50 + schad_75)/2,
+    jse_mtl7 = s_mtl7 * p[7],
+    s_mtl8 = (schad_75 + schad_100)/2,
+    jse_mtl8 = s_mtl8 * p[8],
+    s_mtl9 = (schad_100 + schad_200)/2,
+    jse_mtl9 = s_mtl9 * p[9],
+    s_mtl10 = (schad_200 + schad_300)/2,
+    jse_mtl10 = s_mtl10 * p[10],
+    s_mtl11 = (schad_300 + schad_500)/2,
+    jse_mtl11 = s_mtl11 * p[11],
+    s_mtl12 = (schad_500 + schad_1000)/2,
+    jse_mtl12 = s_mtl12 * p[12],
+    # Mittleres Risiko pro Gebäude
+    jse_mtl = jse_mtl1 + jse_mtl2 + jse_mtl3 + jse_mtl4 + jse_mtl5 + jse_mtl6 + 
+      jse_mtl7 + jse_mtl8 + jse_mtl9 + jse_mtl10 + jse_mtl11 + jse_mtl12,
+    
+    # Risiko nach Massnahme
+    s_mtl1_nM = (schad_1_nM + schad_2_nM)/2,
+    jse_mtl1_nM  = s_mtl1_nM * p[1],
+    s_mtl2_nM  = (schad_2_nM + schad_5_nM)/2,
+    jse_mtl2_nM  = s_mtl2_nM * p[2],
+    s_mtl3_nM  = (schad_5_nM + schad_10_nM)/2,
+    jse_mtl3_nM  = s_mtl3_nM * p[3],
+    s_mtl4_nM = (schad_10_nM + schad_20_nM)/2,
+    jse_mtl4_nM = s_mtl4_nM * p[4],
+    s_mtl5_nM = (schad_20_nM + schad_30_nM)/2,
+    jse_mtl5_nM = s_mtl5_nM * p[5],
+    s_mtl6_nM = (schad_30_nM + schad_50_nM)/2,
+    jse_mtl6_nM = s_mtl6_nM * p[6],
+    s_mtl7_nM = (schad_50_nM + schad_75_nM)/2,
+    jse_mtl7_nM = s_mtl7_nM * p[7],
+    s_mtl8_nM = (schad_75_nM + schad_100_nM)/2,
+    jse_mtl8_nM = s_mtl8_nM * p[8],
+    s_mtl9_nM = (schad_100_nM + schad_200_nM)/2,
+    jse_mtl9_nM = s_mtl9_nM * p[9],
+    s_mtl10_nM = (schad_200_nM + schad_300_nM)/2,
+    jse_mtl10_nM = s_mtl10_nM * p[10],
+    s_mtl11_nM = (schad_300_nM + schad_500_nM)/2,
+    jse_mtl11_nM = s_mtl11_nM * p[11],
+    s_mtl12_nM = (schad_500_nM + schad_1000_nM)/2,
+    jse_mtl12_nM = s_mtl12_nM * p[12],
+    # Mittleres Risiko pro Gebäude
+    jse_mtl_nM = jse_mtl1_nM + jse_mtl2_nM + jse_mtl3_nM + jse_mtl4_nM + jse_mtl5_nM + jse_mtl6_nM + 
+      jse_mtl7_nM + jse_mtl8_nM + jse_mtl9_nM + jse_mtl10_nM + jse_mtl11_nM + jse_mtl12_nM,
+  ) %>% 
+  # nur noch gebäude bei welchen das Risiko grösser Null ist
+  filter(jse_mtl > 0)
+
+```
+
+**Zuverlässigkeitsgrad**
+90% ??? Zu diskutieren (permanent vs mobil)
+
+```{r}
+zuverl_grad <- 0.9
+```
+
+**Umsetzungsgrad**
+Beschreibt, zu welchem Anteil die Massnahmen zur Schadenminderung umgesetzt wird.
+
+
+Präventionsberatungen   | Umsetzungsgrad
+----------------------- | ---------------
+Überschwemmungen Umbau  | 0.25
+Überschwemmungen Neubau | 0.5
+Beitragsgesuche         | 0.7
+
+```{r}
+dat <- dat %>% 
+  mutate(umsetz_grad = ifelse(Typ == "ueberschwemmung",
+                              ifelse(Bauvorhaben == "Neubau", 0.5, 0.25), 0.7),
+         umsetz_grad = ifelse(is.na(umsetz_grad), 0.5, umsetz_grad))
+```
+
+**Risikoreduktion inklusive Umsetzungsgrad und Zuverlässigkeitsgrad**
+```{r}
+dat <- dat %>% 
+  mutate(    
+    # Risikoreduktion
+    risiko_redu = jse_mtl - jse_mtl_nM,
+    # Risikoreduktion inkl. Umsetzungsgrad und Zuverlässigkeitsgrad
+    risiko_redu_fktgrad = risiko_redu * umsetz_grad * zuverl_grad)
+```
+
+#### Zusammenfassung des Risiko
+```{r message = FALSE}
+tbl_ri <- dat %>% 
+  group_by(Jahr = format(as.Date(str_sub(Dossier_Nummer, 1, str_length(Dossier_Nummer)-4),"%Y"),
+                  "%Y")) %>% 
+  summarise(n = n(),
+            min = min(risiko_redu),
+            mean = mean(risiko_redu),
+            median = median(risiko_redu),
+            max = max(risiko_redu),
+            total = sum(risiko_redu))
+
+knitr::kable(tbl_ri,
+             col.names = c('Eröffnungssjahr', 'Anzahl', 'Min. Risiko', 'Mittel Risiko',
+                           'Median Risiko', 'Max. Risiko', 'Total Risiko'),
+             align = c('l', 'c', 'c', 'c', 'c', 'c', 'c'),
+             digits = c(0, 0, 0, 0, 0, 0, 0),
+             format.args = list(big.mark = "'"),
+             caption = 'Reduktion des Überschwemmungsrisiko in CHF/a') %>%
+  kable_styling(bootstrap_options = "striped", full_width = F,
+                latex_options = "HOLD_position")
+```
+
+\newpage
+
+#### Risikoreduktion nach Berücksichtigung des Umsetzungs- und Zuverlässigkeitsgrades
+
+```{r}
+tbl_ri <- dat %>% 
+  group_by(Jahr = format(as.Date(str_sub(Dossier_Nummer, 1, str_length(Dossier_Nummer)-4),"%Y"),
+                  "%Y")) %>% 
+  summarise(n = n(),
+            min = min(risiko_redu_fktgrad),
+            mean = mean(risiko_redu_fktgrad),
+            median = median(risiko_redu_fktgrad),
+            max = max(risiko_redu_fktgrad),
+            total = sum(risiko_redu_fktgrad))
+
+knitr::kable(tbl_ri,
+             col.names = c('Eröffnungssjahr', 'Anzahl', 'Min. Risiko', 'Mittel Risiko',
+                           'Median Risiko', 'Max. Risiko', 'Total Risiko'),
+             align = c('l', 'c', 'c', 'c', 'c', 'c', 'c'),
+             digits = c(0, 0, 0, 0, 0, 0, 0),
+             format.args = list(big.mark = "'"),
+             caption = 'Reduktion des Überschwemmungsrisiko in CHF/a inkl. Funktionsgrade') %>%
+  kable_styling(bootstrap_options = "striped", full_width = F,
+                latex_options = "HOLD_position")
+```
+
+\newpage
+
+## Nutzen - Kosten Schätzung
+Annahmen für die Kosten einer Objektschutzberatung:
+
+**Stundenaufwand nach Versicherungssummen Kategorie und Bauvorhaben**
+
+Versicherungssumme | Neubau  | Umbau
+------------------ | --------| --------
+bis 2 Mio.         | 4.5 h   | 5.5 h
+2 - 5 Mio.         | 5 h     | 6 h
+> 5 Mio.           | 12 h    | 15 h
+
+Stundenansatz = 150 CHF/h
+
+Kosten für den Gebäudeschutz vor Natugefahren:
+$$Kosten_{Prävention}=mittel(Stundenaufwand_{Geb})*Stundensatz$$
+Kosten für den Gebäudeschutz vor Natugefahren mittel Beitragsgesuch:
+$$Kosten_{Beitragsgesuch}=Subventionsanteil_{GVZ}+mittel(Arbeitsaufwand_{Geb})*Stundensatz$$
+
+```{r}
+stundensatz = 150
+
+dat <- dat %>% 
+  # Arbeitsaufwand bei Präventionsberatungen
+    mutate(Bauvorhaben = ifelse(is.na(Bauvorhaben), "kein", Bauvorhaben),
+      arbeitsaufwand = ifelse(Bauvorhaben == "Neubau",
+                                   ifelse(versicherungswert <= 2e6, (4.5 * stundensatz),
+                                          ifelse(versicherungswert <= 5e6, (5 * stundensatz),
+                                                 (12 * stundensatz))),
+                                   ifelse(versicherungswert <= 2e6, (5.5 * stundensatz),
+                                          ifelse(versicherungswert <= 5e6, (6 * stundensatz),
+                                                 (15 * stundensatz)))),
+           # zusätzliche Massnahmenkosten bei den Beitragsgesuchen
+           Auszahlungsbetrag = ifelse(is.na(Auszahlungsbetrag), 0, Auszahlungsbetrag),
+           kosten = ifelse(Typ == "beitragsgesuch", (arbeitsaufwand + Auszahlungsbetrag),
+                           arbeitsaufwand)
+    )
+```
+
+Die Wirtschaftlichkeit wird auf einer jährlichen Basis beurteilt, weshalb die Kosten für eine Schutzmassnahme ebenfalls auf jährliche Werte umgelegt werden. Als Grundlage für die Berechnung der jährlichen Kosten aus der Anfangsinvestition dient die **Annuität**. Als Annuität wird eine regelmässige, jährliche Zahlung bezeichnet, die sich aus den Anteilen Zins und der Tilgung zusammensetzt. Die Tilgung beschreibt hier den jährlichen Beitrag an die Gesamtkosten der Schutzmassnahme.
+
+Das Nutzen-Kosten Verhältnis ergibt sich aus dem Quotient von Risiko, respektive der jährlichen Schadenerwartung, und der Annuität, d.h. Quotient von jährlicher Schadenerwartung und den jährlichen Kosten der Schutzmassnahme. Wir rechnen mit konstanten Rückzahlungsbeträgen (Raten) für
+die Annuität. Dabei bleibt die Höhe der Rate über die gesamte Laufzeit gleich, sofern die Annahme des konstanten, zum Zeitpunkt t=0 fixierten, Zinssatzes gilt:
+$$Annuitaet=Kosten_{Prävention}*\frac{(1+Zinssatz)^{Lebensdauer}*Zinssatz}{(1+Zinssatz)^{Lebensdauer}-1} $$
+Das Nutzen-Kosten Verhältnis lässt sich nun wie folgt berechnen:
+$$N-K=\frac{Risikoreduktion}{Annuitaet}$$
+
+```{r}
+zinssatz <- 0.02
+lebensdauer <- 50
+
+dat <- dat %>%
+  mutate(annuitaet = kosten*(((1 + zinssatz)^lebensdauer * zinssatz)/
+                             ((1 + zinssatz)^lebensdauer - 1)),
+    nutzen_kosten = risiko_redu_fktgrad / annuitaet
+  )
+```
+
+Bei einer Nutzen-Kostenrechnung ohne Verzinsung rechnen wir mit einer linearen jährlichen Abschreibung von:
+$$Abschreibung=\frac{Kosten_{Prävention}}{Lebensdauer}$$
+
+Daraus ergibt sich ein Nutzen-Kosten Verhältnis von
+$$N-K=\frac{Risikoreduktion}{Abschreibung}$$
+oder direkt:
+$$N-K=\frac{Risikoreduktion*Lebensdauer}{Kosten_{Prävention}}$$
+```{r}
+# Nutzen-Kosten ohne Verzinsung pro Gebäude
+dat <- dat %>%
+  mutate(nutzen_kosten_ohne_zins = risiko_redu_fktgrad * lebensdauer / kosten)
+```
+
+#### Zusammenfassung der Nutzen-Kosten Rechnung
+```{r}
+tbl_nk <- dat %>% 
+  summarise(min = min(nutzen_kosten),
+            mean = mean(nutzen_kosten),
+            median = median(nutzen_kosten),
+            max = max(nutzen_kosten),
+            # ohne verzinsung
+            min_oz = min(nutzen_kosten_ohne_zins),
+            mean_oz = mean(nutzen_kosten_ohne_zins),
+            median_oz = median(nutzen_kosten_ohne_zins),
+            max_oz = max(nutzen_kosten_ohne_zins))
+
+tbl_nk <- data.frame(rbind(as.matrix(tbl_nk[1:4]), as.matrix(tbl_nk[5:8])),
+                     row.names = c("Mit Verzinsung", "Ohne Verzinsung"))
+
+knitr::kable(tbl_nk,
+             col.names = c('Min. Verhältnis', 'Mittel Verhältnis', 'Median Verhältnis',
+                           'Max. Verhältnis'),
+             align = c('c', 'c', 'c', 'c'), digits = c(0, 0, 0, 0),
+             format.args = list(big.mark = "'"),
+             caption = paste('Nutzen-Kosten Verhältnis: Verteilung über alle
+                             beratenden Gebäude')) %>%
+  kable_styling(bootstrap_options = "striped", latex_options = "HOLD_position", full_width = F)
+```
+
+**Histogramm der Nutzen-Kosten Verteilung**
+```{r, fig.align = 'left'}
+p <- gghistogram(dat, x = "nutzen_kosten",
+   add = "median", rug = TRUE,
+   color = "#E7B800", fill = "#E7B800",
+   bins = 300,
+   xlab = "Nutzen-Kosten Verhältnis",
+   ylab = "Anzahl",
+   title = "Gebäudeschutz vor Überschwemmungen\nVerteilung der Nutzen-Kosten Verhältnisse",
+   subtitle = paste(nrow(dat), "Gebäude, gerechnet mit Verzinsung"),
+   caption = "Quelle: GVZ, Sept 2019")
+
+ggpar(p, xlim = c(0, 500))
+```
+
+**Beratung vs Beitragsgesuch**
+```{r}
+tbl_nk_bei <- dat %>% 
+  group_by(Typ) %>% 
+  summarise(min = min(nutzen_kosten),
+            mean = mean(nutzen_kosten),
+            median = median(nutzen_kosten),
+            max = max(nutzen_kosten))
+
+knitr::kable(tbl_nk_bei,
+             col.names = c('Typ', 'Min. Verhältnis', 'Mittel Verhältnis', 'Median Verhältnis',
+                           'Max. Verhältnis'),
+             align = c('l', 'c', 'c', 'c', 'c'), digits = c(0, 0, 0, 0, 0),
+             format.args = list(big.mark = "'"),
+             caption = paste('Nutzen-Kosten Verhältnis: Beratung vs Beitragsgesuch')) %>%
+  kable_styling(bootstrap_options = "striped", latex_options = "HOLD_position", full_width = F)
+```
+
+
+```{r}
+# write_excel_csv(dat, 'schad_test.csv', delim = ";")
+```
+
